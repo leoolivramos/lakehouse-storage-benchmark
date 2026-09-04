@@ -1,0 +1,26 @@
+{
+  "name": "postgres-audit-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "plugin.name": "pgoutput",
+    "database.hostname": "${POSTGRES_HOST:-192.168.1.110}",
+    "database.port": "${POSTGRES_PORT:-5432}",
+    "database.user": "debezium",
+    "database.password": "dbz_secure_pwd",
+    "database.dbname": "gestao_publica",
+    "database.server.name": "lakehouse",
+    "topic.prefix": "lakehouse",
+    "publication.name": "dbz_publication",
+    "publication.autocreate.mode": "filtered",
+    "table.include.list": "public.orgaos,public.credores,public.empenhos,public.liquidacoes,public.pagamentos",
+    "decimal.handling.mode": "double",
+    "tombstones.on.delete": "false",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+    "schema.history.internal.kafka.topic": "schema-changes.lakehouse"
+  }
+}

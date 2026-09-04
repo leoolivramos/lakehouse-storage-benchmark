@@ -1,0 +1,187 @@
+version: "3.8"
+
+services:
+  # ============================================================================
+  # 1. ORIGEM TRANSACIONAL (LXC 101 Emulado)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: poc-postgres-origem
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: gestao_publica
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_secure_pwd
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./lxc-101-origem/config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./lxc-101-origem/config/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./lxc-101-origem/sql/01_init_schema.sql:/docker-entrypoint-initdb.d/01_init_schema.sql:ro
+      - ./lxc-101-origem/sql/02_seed_data.sql:/docker-entrypoint-initdb.d/02_seed_data.sql:ro
+    command:
+      - "postgres"
+      - "-c"
+      - "config_file=/etc/postgresql/postgresql.conf"
+      - "-c"
+      - "hba_file=/etc/postgresql/pg_hba.conf"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gestao_publica"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - poc-network
+
+  # ============================================================================
+  # 2. INGESTÃO E PROCESSAMENTO (LXC 102 Emulado)
+  # ============================================================================
+  zookeeper:
+    image: quay.io/debezium/zookeeper:2.5
+    container_name: poc-zookeeper
+    restart: unless-stopped
+    ports:
+      - "2181:2181"
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=2181
+      - ZOOKEEPER_TICK_TIME=2000
+    networks:
+      - poc-network
+
+  kafka:
+    image: quay.io/debezium/kafka:2.5
+    container_name: poc-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    depends_on:
+      - zookeeper
+    environment:
+      - ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_LISTENERS=INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+      - KAFKA_ADVERTISED_LISTENERS=INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true
+    networks:
+      - poc-network
+
+  debezium:
+    image: quay.io/debezium/connect:2.5
+    container_name: poc-debezium
+    restart: unless-stopped
+    ports:
+      - "8083:8083"
+    depends_on:
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:29092
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_connect_statuses
+      - CONFIG_STORAGE_REPLICATION_FACTOR=1
+      - OFFSET_STORAGE_REPLICATION_FACTOR=1
+      - STATUS_STORAGE_REPLICATION_FACTOR=1
+      - KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+      - VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - poc-network
+
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: poc-spark-master
+    restart: unless-stopped
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./lxc-102-ingestao/processing:/opt/bitnami/spark/jobs
+    networks:
+      - poc-network
+
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: poc-spark-worker
+    restart: unless-stopped
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - ./lxc-102-ingestao/processing:/opt/bitnami/spark/jobs
+    networks:
+      - poc-network
+
+  # ============================================================================
+  # 3. CAMADA DE PERSISTÊNCIA (LXC 103 Emulado)
+  # ============================================================================
+  minio:
+    image: minio/minio:RELEASE.2024-01-31T20-20-33Z
+    container_name: poc-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin_lakehouse
+      MINIO_ROOT_PASSWORD: lakehouse_secret_key
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - poc-network
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-01-28T22-14-53Z
+    container_name: poc-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 admin_lakehouse lakehouse_secret_key;
+      /usr/bin/mc mb --ignore-existing myminio/lakehouse-audit;
+      /usr/bin/mc anonymous set download myminio/lakehouse-audit;
+      echo 'Bucket lakehouse-audit pronto!';
+      exit 0;
+      "
+    networks:
+      - poc-network
+
+networks:
+  poc-network:
+    driver: bridge
+
+volumes:
+  pg_data:
+  minio_data:

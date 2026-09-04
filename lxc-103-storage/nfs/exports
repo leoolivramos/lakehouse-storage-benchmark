@@ -1,0 +1,3 @@
+# /etc/exports - Configuração do Servidor NFS para o Lakehouse Storage Benchmark
+# Exporta o diretório de dados para os nós da sub-rede do laboratório Proxmox
+/data/lakehouse-nfs 192.168.1.0/24(rw,sync,no_subtree_check,no_root_squash,insecure)

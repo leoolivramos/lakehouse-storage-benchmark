@@ -170,8 +170,8 @@ A esteira pode ser reproduzida de duas formas: no **ambiente distribuído oficia
 Acesse o terminal do host Proxmox como `root` e execute o script de provisionamento IaC:
 ```bash
 cd /root
-git clone https://github.com/seu-usuario/poc-auditoria-continua-cdc.git
-cd poc-auditoria-continua-cdc/iac-proxmox
+git clone https://github.com/leoolivramos/lakehouse-storage-benchmark.git
+cd lakehouse-storage-benchmark/iac-proxmox
 chmod +x provision_lxcs.sh
 ./provision_lxcs.sh
 ```
@@ -181,7 +181,7 @@ O script criará os três contêineres (LXC 101, 102 e 103) com o template Ubunt
 Conecte-se ao LXC 103 (`192.168.1.130`):
 ```bash
 pct enter 103
-cd /opt/poc-auditoria-continua-cdc/lxc-103-storage
+cd /opt/lakehouse-storage-benchmark/lxc-103-storage
 docker compose up -d
 
 # Configurar o NFS Server no nó
@@ -193,7 +193,7 @@ chmod +x nfs/setup_nfs.sh
 Conecte-se ao LXC 101 (`192.168.1.110`):
 ```bash
 pct enter 101
-cd /opt/poc-auditoria-continua-cdc/lxc-101-origem
+cd /opt/lakehouse-storage-benchmark/lxc-101-origem
 docker compose up -d
 ```
 O banco PostgreSQL será iniciado com as credenciais, o esquema de dados governamentais e a carga de dados pré-existente.
@@ -202,7 +202,7 @@ O banco PostgreSQL será iniciado com as credenciais, o esquema de dados governa
 Conecte-se ao LXC 102 (`192.168.1.120`):
 ```bash
 pct enter 102
-cd /opt/poc-auditoria-continua-cdc/lxc-102-ingestao
+cd /opt/lakehouse-storage-benchmark/lxc-102-ingestao
 docker compose up -d
 
 # Registrar o conector Debezium na API REST
@@ -218,8 +218,8 @@ Caso queira avaliar toda a esteira em uma única máquina ou ambiente de desenvo
 
 ```bash
 # 1. Clone o repositório e configure as variáveis
-git clone https://github.com/seu-usuario/poc-auditoria-continua-cdc.git
-cd poc-auditoria-continua-cdc
+git clone https://github.com/leoolivramos/lakehouse-storage-benchmark.git
+cd lakehouse-storage-benchmark
 make setup
 
 # 2. Inicialize todos os serviços com um único comando
@@ -313,7 +313,7 @@ Caso utilize ou estenda este código em pesquisas acadêmicas ou projetos de eng
   title        = {Prova de Conceito de Auditoria Contínua com CDC e Avaliação Empírica de Armazenamento Lakehouse},
   year         = {2026},
   publisher    = {GitHub},
-  howpublished = {\url{https://github.com/seu-usuario/poc-auditoria-continua-cdc}},
+  howpublished = {\url{https://github.com/leoolivramos/lakehouse-storage-benchmark}},
   note         = {Trabalho de Conclusão de Curso - Universidade Federal de Mato Grosso (UFMT)}
 }
 ```

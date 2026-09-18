@@ -13,7 +13,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin_lakehouse}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-lakehouse_secret_key}
     volumes:
-      - silo_data:/data
+      - minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -67,6 +67,7 @@ services:
       - datanode_data:/hadoop/dfs/data
 
 volumes:
-  silo_data:
+  # Nome legado mantido para reutilizar dados existentes na migração para Silo.
+  minio_data:
   namenode_data:
   datanode_data:

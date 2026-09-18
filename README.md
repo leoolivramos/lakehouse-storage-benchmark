@@ -6,11 +6,26 @@
 [![Apache Kafka](https://img.shields.io/badge/Apache_Kafka-2.5-231F20?logo=apachekafka&logoColor=white)](https://kafka.apache.org/)
 [![Debezium](https://img.shields.io/badge/Debezium-2.5_CDC-red)](https://debezium.io/)
 [![Apache Spark](https://img.shields.io/badge/Apache_Spark-3.5_Structured_Streaming-E25A1C?logo=apachespark&logoColor=white)](https://spark.apache.org/)
-[![MinIO](https://img.shields.io/badge/MinIO-S3_Compatible-c72c48?logo=minio&logoColor=white)](https://min.io/)
+[![Silo](https://img.shields.io/badge/Silo-S3_Compatible-c72c48)](https://silo.pgsty.com/)
 
 Este repositório contém a implementação completa da **Infraestrutura como Código (IaC)**, das rotinas de ingestão contínua baseadas em *Change Data Capture* (CDC) e do arcabouço experimental de avaliação empírica de sistemas de persistência (*Storage*) desenvolvido como parte do Trabalho de Conclusão de Curso (TCC) na **Universidade Federal de Mato Grosso (UFMT)**.
 
 A Prova de Conceito (PoC) implementa uma esteira de dados orientada a eventos para órgãos de controle e auditoria governamental, demonstrando a transição de auditorias amostrais retrospectivas para a auditoria contínua em tempo quase-real (*near real-time*).
+
+### Nota sobre a migração de MinIO para Silo
+
+O projeto utiliza o [Silo](https://silo.pgsty.com/), fork comunitário mantido pela PGSTY a partir do servidor MinIO. A mudança acompanha a alteração no modelo de distribuição e manutenção comunitária do upstream MinIO e mantém a camada de objetos S3 sem exigir alteração no consumidor Spark.
+
+O Silo preserva a API S3, o comando `server`, o endpoint de healthcheck, as convenções de implantação e as variáveis `MINIO_*`. Por isso, nomes como `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` e `MINIO_BUCKET_NAME` continuam no `.env` e no Spark por compatibilidade operacional; isso não significa que o serviço ainda use a imagem `minio/minio`.
+
+Esta PoC fixa as imagens em `RELEASE.2026-09-16T00-00-00Z`:
+
+- Servidor: `docker.io/pgsty/silo`
+- Cliente de buckets: `docker.io/pgsty/mc`
+- API S3: `http://192.168.1.130:9000`
+- Console: `http://192.168.1.130:9001`
+
+Consulte a [documentação oficial do Silo](https://silo.pgsty.com/docs/), o [guia de migração](https://silo.pgsty.com/compatibility/migration/) e as [notas de release](https://silo.pgsty.com/blog/release/) antes de atualizar a versão pinada. O Silo é um projeto independente, não afiliado nem endossado pela MinIO, Inc.
 
 ---
 
@@ -49,7 +64,7 @@ flowchart TD
 
             subgraph LXC103 ["LXC 103: Persistência / Storage (192.168.1.130)"]
                 direction TB
-                MINIO["MinIO Object Storage\n(S3 API / Parquet)"]
+                SILO["Silo Object Storage\n(S3 API / Parquet)"]
                 HDFS["Apache Hadoop HDFS\n(NameNode + DataNode)"]
                 NFS["NFS Server\n(/data/lakehouse-nfs)"]
             end
@@ -57,7 +72,7 @@ flowchart TD
     end
 
     PG_WAL -.->|Replicação Lógica| DBZ
-    SPARK ==>|Gravação Paralela 1| MINIO
+    SPARK ==>|Gravação Paralela 1| SILO
     SPARK ==>|Gravação Paralela 2| HDFS
     SPARK ==>|Gravação Paralela 3| NFS
 
@@ -66,7 +81,7 @@ flowchart TD
     classDef comp fill:#191e2a,stroke:#73d0ff,stroke-width:1px,color:#fff;
     class BareMetal host;
     class LXC101,LXC102,LXC103 lxc;
-    class PG,DBZ,KAFKA,SPARK,MINIO,HDFS,NFS comp;
+    class PG,DBZ,KAFKA,SPARK,SILO,HDFS,NFS comp;
 ```
 
 ---
@@ -100,7 +115,7 @@ O conector Debezium opera com a engine nativa `pgoutput` do PostgreSQL e publica
 ### 2.3 Camada de Persistência Avaliada (LXC 103)
 
 O nó de persistência disponibiliza três tecnologias distintas para comparação empírica de desempenho:
-1. **MinIO (S3 API):** Armazenamento de objetos compatível com AWS S3, gravando partições colunares em formato Parquet via protocolo Hadoop S3A.
+1. **Silo (S3 API):** Armazenamento de objetos compatível com AWS S3, gravando partições colunares em formato Parquet via protocolo Hadoop S3A. O endpoint e as credenciais mantêm o contrato `MINIO_*` por compatibilidade.
 2. **Apache Hadoop HDFS (3.2.1):** Sistema de arquivos distribuído baseado em blocos, com NameNode e DataNode locais.
 3. **NFS (Network File System):** Sistema de arquivos em rede tradicional montado via kernel Linux com semântica POSIX direta.
 
@@ -143,9 +158,9 @@ lakehouse-storage-benchmark/
 │       └── requirements.txt               # Dependências Python para processamento
 │
 ├── lxc-103-storage/                       # Nó LXC 103: Camada de Persistência
-│   ├── docker-compose.yml                 # MinIO (API + Console) e Apache Hadoop HDFS
+│   ├── docker-compose.yml                 # Silo (API + Console) e Apache Hadoop HDFS
 │   ├── minio/
-│   │   └── init-buckets.sh                # Inicialização do bucket lakehouse-audit
+│   │   └── init-buckets.sh                # Inicialização do bucket S3 (caminho legado)
 │   ├── hdfs/
 │   │   └── hdfs-site.xml                  # Configurações de replicação e caminhos HDFS
 │   └── nfs/
@@ -210,6 +225,23 @@ chmod +x connectors/register_postgres_cdc.sh
 ./connectors/register_postgres_cdc.sh
 ```
 
+#### Migração de uma instalação MinIO existente para Silo
+
+Antes da troca, confirme que não há gravações em andamento e faça um backup independente do volume de objetos. A composição mantém deliberadamente o nome técnico legado `minio_data`, de modo que o mesmo volume Docker seja reutilizado após a atualização.
+
+```bash
+cd /opt/lakehouse-storage-benchmark/lxc-103-storage
+docker compose ps
+docker stop minio-lakehouse minio-init-buckets 2>/dev/null || true
+docker compose pull silo silo-init
+docker compose up -d silo
+docker compose run --rm silo-init
+```
+
+Valide a API S3, o console e o bucket `lakehouse-audit` antes de iniciar o Spark. Não use `docker compose down -v` durante a migração: a opção `-v` remove o volume que contém os objetos. A atualização deve usar uma release pinada; a versão atual deste projeto é `RELEASE.2026-09-16T00-00-00Z`.
+
+Em caso de rollback, pare o Silo, restaure a imagem MinIO pinada anteriormente no arquivo Compose e inicie novamente usando o mesmo volume `minio_data`. Não execute binários antigos e novos simultaneamente sobre os mesmos dados.
+
 ---
 
 ### Método B: Execução Local Unificada (All-in-One para Testes e Demonstração)
@@ -255,7 +287,7 @@ make benchmark
 ```
 Este comando gera o relatório estatístico com valores Mínimos, Médios, Mediana (P50), P95 e P99, além de persistir o resultado no arquivo `benchmark_latency_results.json`.
 
-### 5.3 Avaliação Comparativa de Persistência (MinIO vs HDFS vs NFS)
+### 5.3 Avaliação Comparativa de Persistência (Silo S3 vs HDFS vs NFS)
 
 Executa o cálculo consolidado do tempo de gravação dos micro-batches nas três camadas de persistência e exporta a tabela de resultados formatada em LaTeX:
 
@@ -272,7 +304,7 @@ A tabela gerada é salva em `tabela_resultados_tcc.tex`, pronta para ser incluí
 \begin{tabular}{lccccc}
 \hline
 \textbf{Sistema de Armazenamento} & \textbf{Média (ms)} & \textbf{Desvio Padrão} & \textbf{P50 (ms)} & \textbf{P95 (ms)} & \textbf{P99 (ms)} \\ \hline
-MinIO (S3 Object Storage) & 118.42 & 12.81 & 115.00 & 142.10 & 158.40 \\
+Silo (S3 Object Storage) & 118.42 & 12.81 & 115.00 & 142.10 & 158.40 \\
 Apache HDFS & 98.24 & 9.43 & 95.00 & 115.60 & 126.80 \\
 NFS (Network File System) & 79.51 & 7.12 & 78.00 & 92.40 & 104.20 \\ \hline
 \end{tabular}
@@ -298,7 +330,7 @@ Durante a execução da esteira, os seguintes painéis administrativos estarão 
 | :--- | :--- | :--- |
 | **Apache Spark Master** | `http://192.168.1.120:8080` | Monitoramento dos *Jobs*, *Executors* e métricas de *Streaming* |
 | **Debezium REST API** | `http://192.168.1.120:8083` | Inspeção de status dos conectores e *tasks* CDC |
-| **MinIO Console** | `http://192.168.1.130:9001` | Interface Web de navegação de *Buckets* e objetos Parquet |
+| **Silo Console** | `http://192.168.1.130:9001` | Interface Web de navegação de *Buckets* e objetos Parquet |
 | **HDFS NameNode UI** | `http://192.168.1.130:9870` | Estatísticas do sistema de arquivos distribuído e nós DataNode |
 
 ---

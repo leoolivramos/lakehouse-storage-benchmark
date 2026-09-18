@@ -140,9 +140,9 @@ services:
   # ============================================================================
   # 3. CAMADA DE PERSISTÊNCIA (LXC 103 Emulado)
   # ============================================================================
-  minio:
-    image: minio/minio:RELEASE.2024-01-31T20-20-33Z
-    container_name: poc-minio
+  silo:
+    image: ${SILO_IMAGE:-docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z}
+    container_name: poc-silo
     restart: unless-stopped
     ports:
       - "9000:9000"
@@ -151,7 +151,7 @@ services:
       MINIO_ROOT_USER: admin_lakehouse
       MINIO_ROOT_PASSWORD: lakehouse_secret_key
     volumes:
-      - minio_data:/data
+      - silo_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -161,17 +161,17 @@ services:
     networks:
       - poc-network
 
-  minio-init:
-    image: minio/mc:RELEASE.2024-01-28T22-14-53Z
-    container_name: poc-minio-init
+  silo-init:
+    image: ${SILO_MC_IMAGE:-docker.io/pgsty/mc:RELEASE.2026-09-16T00-00-00Z}
+    container_name: poc-silo-init
     depends_on:
-      minio:
+      silo:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 admin_lakehouse lakehouse_secret_key;
-      /usr/bin/mc mb --ignore-existing myminio/lakehouse-audit;
-      /usr/bin/mc anonymous set download myminio/lakehouse-audit;
+      /usr/bin/mc alias set silo http://silo:9000 admin_lakehouse lakehouse_secret_key;
+      /usr/bin/mc mb --ignore-existing silo/lakehouse-audit;
+      /usr/bin/mc anonymous set download silo/lakehouse-audit;
       echo 'Bucket lakehouse-audit pronto!';
       exit 0;
       "
@@ -184,4 +184,4 @@ networks:
 
 volumes:
   pg_data:
-  minio_data:
+  silo_data:

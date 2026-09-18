@@ -1,10 +1,10 @@
 services:
   # ----------------------------------------------------------------------------
-  # 1. MinIO: Object Storage S3-Compatible
+  # 1. Silo: Object Storage S3-Compatible
   # ----------------------------------------------------------------------------
-  minio:
-    image: minio/minio:RELEASE.2024-01-31T20-20-33Z
-    container_name: minio-lakehouse
+  silo:
+    image: ${SILO_IMAGE:-docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z}
+    container_name: silo-lakehouse
     restart: unless-stopped
     ports:
       - "9000:9000"
@@ -13,7 +13,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin_lakehouse}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-lakehouse_secret_key}
     volumes:
-      - minio_data:/data
+      - silo_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -21,17 +21,17 @@ services:
       timeout: 5s
       retries: 5
 
-  minio-init:
-    image: minio/mc:RELEASE.2024-01-28T22-14-53Z
-    container_name: minio-init-buckets
+  silo-init:
+    image: ${SILO_MC_IMAGE:-docker.io/pgsty/mc:RELEASE.2026-09-16T00-00-00Z}
+    container_name: silo-init-buckets
     depends_on:
-      minio:
+      silo:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-admin_lakehouse} ${MINIO_ROOT_PASSWORD:-lakehouse_secret_key};
-      /usr/bin/mc mb --ignore-existing myminio/${MINIO_BUCKET_NAME:-lakehouse-audit};
-      /usr/bin/mc anonymous set download myminio/${MINIO_BUCKET_NAME:-lakehouse-audit};
+      /usr/bin/mc alias set silo http://silo:9000 ${MINIO_ROOT_USER:-admin_lakehouse} ${MINIO_ROOT_PASSWORD:-lakehouse_secret_key};
+      /usr/bin/mc mb --ignore-existing silo/${MINIO_BUCKET_NAME:-lakehouse-audit};
+      /usr/bin/mc anonymous set download silo/${MINIO_BUCKET_NAME:-lakehouse-audit};
       echo 'Bucket ${MINIO_BUCKET_NAME:-lakehouse-audit} configurado com sucesso.';
       exit 0;
       "
@@ -67,6 +67,6 @@ services:
       - datanode_data:/hadoop/dfs/data
 
 volumes:
-  minio_data:
+  silo_data:
   namenode_data:
   datanode_data:

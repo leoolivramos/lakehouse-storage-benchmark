@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Script de Inicialização de Buckets no MinIO
+# Script de Inicialização de Buckets no Silo
 # ==============================================================================
 set -euo pipefail
 
@@ -10,7 +10,7 @@ MINIO_USER="${MINIO_ROOT_USER:-admin_lakehouse}"
 MINIO_PASSWORD="${MINIO_ROOT_PASSWORD:-lakehouse_secret_key}"
 BUCKET_NAME="${MINIO_BUCKET_NAME:-lakehouse-audit}"
 
-echo "=== Configurando Buckets MinIO em http://${MINIO_HOST}:${MINIO_PORT} ==="
+echo "=== Configurando Buckets Silo em http://${MINIO_HOST}:${MINIO_PORT} ==="
 
 mc alias set localminio "http://${MINIO_HOST}:${MINIO_PORT}" "${MINIO_USER}" "${MINIO_PASSWORD}"
 mc mb --ignore-existing "localminio/${BUCKET_NAME}"

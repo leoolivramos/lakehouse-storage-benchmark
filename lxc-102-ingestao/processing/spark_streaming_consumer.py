@@ -2,7 +2,7 @@
 """
 Job Apache Spark Structured Streaming para Ingestão Contínua de Eventos CDC
 Consome eventos do Apache Kafka e persiste paralelamente nas camadas de armazenamento:
-1. MinIO (S3 Object Storage - Parquet)
+1. Silo (S3 Object Storage - Parquet)
 2. Apache Hadoop HDFS
 3. NFS (Network File System)
 
@@ -69,7 +69,7 @@ def create_spark_session():
         .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.apache.hadoop:hadoop-aws:3.3.4")
         .config("spark.sql.streaming.forceDeleteTempCheckpointLocation", "true")
         .config("spark.sql.shuffle.partitions", "4")
-        # Configurações Hadoop S3A para MinIO
+        # Configurações Hadoop S3A para Silo
         .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
         .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS_KEY)
         .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET_KEY)
@@ -97,7 +97,7 @@ def process_batch(batch_df, batch_id):
         .withColumn("cdc_lag_ms", expr(f"{current_time_ms} - ts_ms"))
     )
 
-    # Persistência 1: MinIO (S3)
+    # Persistência 1: Silo (S3)
     s3_path = f"s3a://{MINIO_BUCKET}/empenhos_parquet/"
     t0_s3 = time.time()
     try:
@@ -105,7 +105,7 @@ def process_batch(batch_df, batch_id):
         s3_duration_ms = (time.time() - t0_s3) * 1000
     except Exception as e:
         s3_duration_ms = -1
-        print(f"[WARN] Falha ao persistir no MinIO: {e}")
+        print(f"[WARN] Falha ao persistir no Silo: {e}")
 
     # Persistência 2: HDFS
     hdfs_path = f"{HDFS_NAMENODE}/lakehouse/empenhos/"

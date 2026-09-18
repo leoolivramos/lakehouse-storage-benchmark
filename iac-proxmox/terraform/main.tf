@@ -80,7 +80,7 @@ resource "proxmox_lxc" "lxc_102_ingestao" {
   ssh_public_keys = fileexists(var.ssh_public_key_path) ? file(var.ssh_public_key_path) : null
 }
 
-# LXC 103 - Camada de Persistência (MinIO, HDFS, NFS)
+# LXC 103 - Camada de Persistência (Silo S3, HDFS, NFS)
 resource "proxmox_lxc" "lxc_103_storage" {
   target_node  = var.proxmox_node
   vmid         = 103
